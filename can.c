@@ -87,6 +87,50 @@ int spi_reset_MCP_chip() {
     return error;
 }
 
+int MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
+    //see header file line 202 for CAN_OPERATION_MODE enum 
+    REG_CiCON CAN_ctrl_reg;
+
+    uint8_t error = SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CAN_ctrl_reg.word);
+    
+    if(!error) {
+        return -1;
+        //SPI communication failed
+    }
+
+    if(CAN_ctrl_reg.bF.OpMode == mode) {
+        return mode;
+    }
+
+    CAN_ctrl_reg.bF.RequestOpMode = mode;
+
+    error = SPI_write_word_to_MCP(MCP2518FD_REG_CiCON, CAN_ctrl_reg.word);
+
+    uint16_t timeout = 10000;
+
+    while(timeout--) {
+        error = SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CAN_ctrl_reg.word);
+
+        if(!error) {
+            return -1;
+            //SPI failed
+        }
+
+        if(CAN_ctrl_reg.bF.OpMode == mode) {
+            break;
+        }
+
+        sleep_us(100);
+
+    }
+
+    if(!timeout) {
+        return -2;
+        //failed to set control mode in time
+    }
+
+}
+
 int MCP2518fd_oscillator_config() {
     REG_OSC osc_ctrl_reg; 
     //check line 544 of can.h for more info on REG_OSC bitfield union
@@ -96,7 +140,7 @@ int MCP2518fd_oscillator_config() {
 
     //oscillator is started
 
-    uint32_t timeout = 10000;
+    uint16_t timeout = 10000;
 
     uint8_t error;
 
@@ -121,10 +165,15 @@ int MCP2518fd_oscillator_config() {
         //oscillator failed to stabilize
     }
 
+    return 0;
+
     /*
     I will be using 40 Mhz internal crystal oscillator (no PLL)
     which determines SYSCLK (for CAN FD controller module and RAM message memory access)
     */
+
+
+    //NEED TO ENTER CONFIG MODE HERE
 
     osc_ctrl_reg.bF.PllEnable = 0;
     osc_ctrl_reg.bF.OscDisable = 0;
@@ -171,7 +220,16 @@ int MCP2518fd_oscillator_config() {
 int MCP2518fd_FIFO_config() {
     
 
+    /*
+    - must set mcp2518fd chip into configuration mode (see CiCON register, more specifically REQOP bit)
+    */
+
+
     return 0;
+}
+
+int devid_verification() {
+
 }
 
 

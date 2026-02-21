@@ -197,6 +197,20 @@ typedef union {
     uint8_t  byte[4];
 } REG_CiCON;
 
+//the following is a custom enum for easy-to-understand modes to set opmode bit in CiCON register to change CAN modes
+
+typedef enum {
+    CAN_NORMAL_MODE = 0b000,
+    CAN_SLEEP_MODE = 0b001,
+    CAN_INTERNAL_LOOPBACK_MODE = 0b010,
+    CAN_LISTEN_ONLY_MODE = 0b011,
+    CAN_CONFIGURATION_MODE = 0b100,
+    CAN_EXTERNAL_LOOPBACK_MODE = 0b101,
+    CAN_CLASSIC_MODE = 0b110,
+    CAN_RESTRICTED_MODE = 0b111
+} CAN_OPERATION_MODE;
+
+
 /*--- Nominal Bit Time Configuration (CiNBTCFG) at 0x004 -------------------*/
 typedef union {
     struct {
