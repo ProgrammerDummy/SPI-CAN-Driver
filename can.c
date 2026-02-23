@@ -181,7 +181,7 @@ int8_t MCP2518fd_oscillator_config() {
 
     //now write to system clock with new configuration and poll again
 
-    if(SPI_write_word_to_MCP(MCP2518FD_REG_OSC, osc_ctrl_reg.word) == 0) {
+    if(!SPI_write_word_to_MCP(MCP2518FD_REG_OSC, osc_ctrl_reg.word)) {
         return -1;
         //again, checks if spi communication failed
     }
@@ -202,6 +202,8 @@ int8_t MCP2518fd_oscillator_config() {
             break;
             //system clock stabilized
         }
+
+        sleep_us(100);
     }
 
     if(!timeout) {
@@ -233,19 +235,71 @@ int8_t MCP2518fd_devid_verify() {
 
 int8_t MCP2518fd_CAN_controller_config() {
 
+    REG_CiCON CiCON_reg;
 
+    if(!SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CiCON_reg.word)) {
+        return -1;
+    }
+
+    if(CiCON_reg.bF.isBusy == 1) {
+        uint8_t timeout = 10000;
+
+        while(timeout--) {
+            if(!SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CiCON_reg.word)) {
+                return -1;
+            }
+
+            if(CiCON_reg.bF.isBusy == 0) {
+                break;
+            }
+
+            sleep_us(100);
+        }
+
+        if(!timeout) {
+            return -2;
+        }
+    }
+    
+    /*
+    I am choosing the simplest configuration to make a working prototype that can be tweaked later on
+    */
+
+    CiCON_reg.bF.DNetFilterCount = 0x0;
+    CiCON_reg.bF.IsoCrcEnable = 1;
+    CiCON_reg.bF.ProtocolExceptionEventDisable = 0;
+    CiCON_reg.bF.WakeUpFilterEnable = 0;
+    CiCON_reg.bF.WakeUpFilterTime = 0;
+    CiCON_reg.bF.BitRateSwitchDisable = 0;
+    CiCON_reg.bF.RestrictReTxAttempts = 0;
+    CiCON_reg.bF.EsiInGatewayMode = 0;
+    CiCON_reg.bF.SystemErrorToListenOnly = 0;
+    CiCON_reg.bF.StoreInTEF = 0;
+    CiCON_reg.bF.TXQEnable = 1;
+    CiCON_reg.bF.TxBandWidthSharing = 0x0;
+
+    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiCON, CiCON_reg.word)) {
+        return -1;
+        //again, checks if spi communication failed
+    }
+
+    //do i need to poll again?
+
+    return 0;
+
+    
+}
+
+int8_t MCP2518fd_nominal_bit_timing_config() {
+    
+}
+
+int8_t MCP2518fd_data_bit_timing_config() {
 
 }
 
-
-
 int8_t MCP2518fd_FIFO_config() {
     
-
-    /*
-    - must set mcp2518fd chip into configuration mode (see CiCON register, more specifically REQOP bit)
-    */
-
 
     return 0;
 }
@@ -264,10 +318,6 @@ int8_t MCP2518fd_RX_FIFO_config() {
 
 int8_t MCP2518fd_filter_config() {
 
-}
-
-int8_t MCP2518fd_bit_timing_config() {
-    
 }
 
 int8_t MCP2518fd_available_RAM_calc() {
