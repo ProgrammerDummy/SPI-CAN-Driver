@@ -29,10 +29,9 @@ void SPI_to_CAN_master_init(void) {
 //need bit padding for 4 bytes
 //need polling after reset 
 //learn DMA for large data transfer
-//REMEMBER MSB FIRST
+//REMEMBER MSB FIRST for individual bytes but for multi-bytes LSB first (for data transmission and reconstruction)
 
-
-int SPI_read_word_from_MCP(uint16_t addr, uint32_t *data) {
+int8_t SPI_read_word_from_MCP(uint16_t addr, uint32_t *data) {
     uint8_t txbuffer[6] = {0};
     uint8_t rxbuffer[6] = {0};
 
@@ -47,7 +46,7 @@ int SPI_read_word_from_MCP(uint16_t addr, uint32_t *data) {
 
 }
 
-int SPI_write_word_to_MCP(uint16_t addr, uint32_t data) {
+int8_t SPI_write_word_to_MCP(uint16_t addr, uint32_t data) {
 
     uint8_t txbuffer[6] = {0};
     uint8_t rxbuffer[6] = {0};
@@ -64,18 +63,17 @@ int SPI_write_word_to_MCP(uint16_t addr, uint32_t data) {
     return error;
 }
 
-
-int spi_write_to_MCP(uint8_t *txbuffer, uint8_t *rxbuffer, uint16_t len) {
+int8_t spi_write_to_MCP(uint8_t *txbuffer, uint8_t *rxbuffer, uint16_t len) {
     gpio_put(PICO_DEFAULT_SPI_CSN_PIN, LOW);
 
-    spi_write_read_blocking(PICO_DEFAULT_SPI, txbuffer, rxbuffer, len);
+    int8_t error = spi_write_read_blocking(PICO_DEFAULT_SPI, txbuffer, rxbuffer, len);
 
     gpio_put(PICO_DEFAULT_SPI_CSN_PIN, HIGH);
 
-    return 0;
+    return error;
 }
 
-int spi_reset_MCP_chip() {
+int8_t spi_reset_MCP_chip() {
 
     uint8_t txbuffer[6] = {0};
     uint8_t rxbuffer[6] = {0};
@@ -87,7 +85,7 @@ int spi_reset_MCP_chip() {
     return error;
 }
 
-int MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
+int8_t MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
     //see header file line 202 for CAN_OPERATION_MODE enum 
     REG_CiCON CAN_ctrl_reg;
 
@@ -99,7 +97,7 @@ int MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
     }
 
     if(CAN_ctrl_reg.bF.OpMode == mode) {
-        return mode;
+        return 0;
     }
 
     CAN_ctrl_reg.bF.RequestOpMode = mode;
@@ -129,16 +127,16 @@ int MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
         //failed to set control mode in time
     }
 
+    return 0;
+
 }
 
-int MCP2518fd_oscillator_config() {
+int8_t MCP2518fd_oscillator_config() {
     REG_OSC osc_ctrl_reg; 
     //check line 544 of can.h for more info on REG_OSC bitfield union
 
     sleep_ms(2);
-    //give time for oscillator to start
-
-    //oscillator is started
+    //give time for oscillator to start if it hasn't already
 
     uint16_t timeout = 10000;
 
@@ -217,7 +215,31 @@ int MCP2518fd_oscillator_config() {
 
 }
 
-int MCP2518fd_FIFO_config() {
+int8_t MCP2518fd_devid_verify() {
+    REG_DEVID devid_reg;
+    
+    if(!SPI_read_word_from_MCP(MCP2518FD_REG_DEVID, &devid_reg.word)) {
+        return -2;
+    }
+
+    if(devid_reg.bF.DEV != 0x01) {
+        return -1;
+    }
+
+    return 0;
+
+
+}
+
+int8_t MCP2518fd_CAN_controller_config() {
+
+
+
+}
+
+
+
+int8_t MCP2518fd_FIFO_config() {
     
 
     /*
@@ -228,19 +250,48 @@ int MCP2518fd_FIFO_config() {
     return 0;
 }
 
-int devid_verification() {
+int8_t MCP2518fd_queue_FIFO_config() {
 
 }
 
+int8_t MCP2518fd_TX_FIFO_config() {
 
-int MCP2518fd_init() {
-    spi_reset_MCP_chip();
+}
 
-    if(!MCP2518fd_oscillator_config()) { //i need to double check if this logic is right
+int8_t MCP2518fd_RX_FIFO_config() {
+
+}
+
+int8_t MCP2518fd_filter_config() {
+
+}
+
+int8_t MCP2518fd_bit_timing_config() {
+    
+}
+
+int8_t MCP2518fd_available_RAM_calc() {
+
+}
+
+int8_t MCP2518fd_init() {
+    spi_reset_MCP_chip(); //should set CAN controller mode to configuration mode already but further checks are made later
+
+    sleep_ms(2);
+
+    if(MCP2518fd_set_mode(CAN_CONFIGURATION_MODE) != 0) { //check to see if already in configuration mode, if not then set it 
         return -1;
+    }
+
+    if(!MCP2518fd_oscillator_config()) { //i need to double check if this logic is right, but checks if oscillator is running and then sets sysclk to 40 MHz
+        return -2;
     } 
 
-    if(!MCP2518fd_FIFO_config()) {
-        return -2; 
+    if(!MCP2518fd_devid_verify()) { //checks device id to verify it is a MCP2518fd 
+        return -3;
     }
+
+
+    
+    
 }
