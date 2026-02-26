@@ -291,10 +291,103 @@ int8_t MCP2518fd_CAN_controller_config() {
 }
 
 int8_t MCP2518fd_nominal_bit_timing_config() {
-    
+    /*
+    TQ (time quantum) = (BRP+1)/(SYSCLK)
+
+    BRP is baud rate prescalar
+
+    TQ = 25 nanoseconds if we choose BRP = 0 
+
+
+    every bit in CAN is transmitted/received like this:
+
+    SYNC (1 TQ) + PROP (N TQ) + PHASE 1 (N TQ) + PHASE 2 (N TQ)
+
+    PROP + PHASE 1 >= 2*(propagation delay + transceiver delay)/TQ (for shorter wires)
+
+    PHASE 2 >= 2 TQ
+
+    sampling point = (1 + PROP + PHASE 1)/(1 + PROP + PHASE 1 + PHASE 2) --> gives percentage of bit time where sampling occurs, aim for 75 - 80%? 
+
+
+    NBT (nominal bit time) = 1 + PROP + PHASE 1 + PHASE 2
+
+    Bit rate = SYSCLK / ((BRP+1)*NBT)
+
+    Synchronization jump width (SJW) <= MIN(PHASE 1, PHASE 2) but typically 4 TQ wide
+
+
+    set BRP = 0
+    and set total time for each bit to be 80 TQ
+    then our bit rate with a 40Mhz SYSCLK will be 500 kbps
+
+    with 80 TQ, 1 will automatically be allocated to the SYNC section (unchangeable)
+
+    I will go for a sampling point percentage of 80%, which means our PROP + PHASE 1 (TSEG1) will be allocated 63 TQ and our PHASE 2 (TSEG2) will be allocated 16 TQ
+    for maximum flexibility i will do SJW = 16 TQ 
+    */ 
+
+
+    REG_CiNBTCFG NBT_reg; 
+
+    NBT_reg.bF.SJW = 15;
+    NBT_reg.bF.TSEG2 = 15;
+    NBT_reg.bF.TSEG1 = 62;
+    NBT_reg.bF.BRP = 0;
+
+    //0-based register so subtract one to desired number of TQ to assign
+
+    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiNBTCFG, NBT_reg.word)) {
+        return -1;
+    }
+
+    return 0;
+
 }
 
 int8_t MCP2518fd_data_bit_timing_config() {
+    REG_CiDBTCFG DBT_reg;
+
+    //nearly the same principles as NBT, but faster for data transmission, and signal sampling point will be at around 75%
+    //so fewer TQ will be used (20 TQ), NBT = 20 TQ
+
+    /*
+    TQ = (BRP+1)/SYSCLK = 25 ns
+
+    bit rate = SYSCL/((1+BRP)*NBT)
+    sample point = (1+TSEG1)/NBT
+
+    TSEG1 = 14 TQ
+    TSEG2 = 5 TQ
+    */
+
+    DBT_reg.bF.BRP = 0;
+    DBT_reg.bF.SJW = 4;
+    DBT_reg.bF.TSEG1 = 13;
+    DBT_reg.bF.TSEG2 = 4;
+
+    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiDBTCFG, DBT_reg.word)) {
+        return -1;
+    }
+
+    return 0;
+
+}
+
+int8_t MCP2518fd_TDC_config() {
+
+    REG_CiTDC TDC_reg;
+
+    TDC_reg.bF.TDCMode = 0b10; //activate auto TDC mode
+    TDC_reg.bF.TDCOffset = 0;
+    TDC_reg.bF.EdgeFilterEnable = 0; //enable this if there are noise and synchronization issues in startup
+    TDC_reg.bF.SID11Enable = 0;
+
+    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiTDC, TDC_reg.word)) {
+        return -1;
+    }
+
+    return 0;
 
 }
 
@@ -304,21 +397,27 @@ int8_t MCP2518fd_FIFO_config() {
     return 0;
 }
 
-int8_t MCP2518fd_queue_FIFO_config() {
+int8_t MCP2518fd_queue_FIFO_config() { //CiTXQCON
 
 }
 
-int8_t MCP2518fd_TX_FIFO_config() {
+int8_t MCP2518fd_TX_FIFO_config(uint8_t n) { //CiFIFOCON
 
 }
 
-int8_t MCP2518fd_RX_FIFO_config() {
+int8_t MCP2518fd_RX_FIFO_config(uint8_t n) { //CiFIFOCON
 
 }
 
-int8_t MCP2518fd_filter_config() {
+int8_t MCP2518fd_filter_enable_config() { //CiFLTCON
 
 }
+
+//CiFLTOBJ
+//CiMASK
+//CiINT
+//IOCON
+//set to normal mode (poll)
 
 int8_t MCP2518fd_available_RAM_calc() {
 
