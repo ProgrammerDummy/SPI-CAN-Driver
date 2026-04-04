@@ -31,70 +31,59 @@ void SPI_to_CAN_master_init(void) {
 //learn DMA for large data transfer
 //REMEMBER MSB FIRST for individual bytes but for multi-bytes LSB first (for data transmission and reconstruction)
 
-int8_t SPI_read_word_from_MCP(uint16_t addr, uint32_t *data) {
+void SPI_read_word_from_MCP(uint16_t addr, uint32_t *data) {
     uint8_t txbuffer[6] = {0};
     uint8_t rxbuffer[6] = {0};
 
     txbuffer[0] = (MCP2518FD_INSTR_READ << 4) | (addr >> 8) & 0x0F;
-    txbuffer[1] = (addr << 8) & 0xFF; 
+    txbuffer[1] = addr & 0xFF; 
 
-    uint8_t error = spi_write_to_MCP(txbuffer, rxbuffer, 6);
+    spi_write_to_MCP(txbuffer, rxbuffer, 6);
 
     *data = (rxbuffer[2] << 0) | (rxbuffer[3] << 8) | (rxbuffer[4] << 16) | (rxbuffer[5] << 24);
 
-    return error;
-
 }
 
-int8_t SPI_write_word_to_MCP(uint16_t addr, uint32_t data) {
+void SPI_write_word_to_MCP(uint16_t addr, uint32_t data) {
 
     uint8_t txbuffer[6] = {0};
     uint8_t rxbuffer[6] = {0};
 
     txbuffer[0] = (MCP2518FD_INSTR_WRITE << 4) | ((addr >> 8) & 0x0F);
-    txbuffer[1] = (addr << 8) & 0xFF;
+    txbuffer[1] = addr & 0xFF;
     txbuffer[2] = (data >> 0) & 0xFF;
     txbuffer[3] = (data >> 8) & 0xFF;
     txbuffer[4] = (data >> 16) & 0xFF;
     txbuffer[5] = (data >> 24) & 0xFF;
 
-    uint8_t error = spi_write_to_MCP(txbuffer, rxbuffer, 6);
-
-    return error;
+    spi_write_to_MCP(txbuffer, rxbuffer, 6);
 }
 
-int8_t spi_write_to_MCP(uint8_t *txbuffer, uint8_t *rxbuffer, uint16_t len) {
+void spi_write_to_MCP(uint8_t *txbuffer, uint8_t *rxbuffer, uint16_t len) {
     gpio_put(PICO_DEFAULT_SPI_CSN_PIN, LOW);
 
-    int8_t error = spi_write_read_blocking(PICO_DEFAULT_SPI, txbuffer, rxbuffer, len);
+    spi_write_read_blocking(spi_default, txbuffer, rxbuffer, len);
 
     gpio_put(PICO_DEFAULT_SPI_CSN_PIN, HIGH);
 
-    return error;
 }
 
-int8_t spi_reset_MCP_chip() {
+void spi_reset_MCP_chip() {
 
     uint8_t txbuffer[6] = {0};
     uint8_t rxbuffer[6] = {0};
     txbuffer[0] = (MCP2518FD_INSTR_RESET << 4) | (0x00 >> 4) & 0x0F;
     txbuffer[1] = 0x00;
 
-    uint8_t error = spi_write_to_MCP(txbuffer, rxbuffer, 2);
+    spi_write_to_MCP(txbuffer, rxbuffer, 2);
 
-    return error;
 }
 
 int8_t MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
     //see header file line 202 for CAN_OPERATION_MODE enum 
     REG_CiCON CAN_ctrl_reg;
 
-    uint8_t error = SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CAN_ctrl_reg.word);
-    
-    if(!error) {
-        return -1;
-        //SPI communication failed
-    }
+    SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CAN_ctrl_reg.word);
 
     if(CAN_ctrl_reg.bF.OpMode == mode) {
         return 0;
@@ -102,36 +91,26 @@ int8_t MCP2518fd_set_mode(CAN_OPERATION_MODE mode) {
 
     CAN_ctrl_reg.bF.RequestOpMode = mode;
 
-    error = SPI_write_word_to_MCP(MCP2518FD_REG_CiCON, CAN_ctrl_reg.word);
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiCON, CAN_ctrl_reg.word);
 
     uint16_t timeout = 10000;
 
     while(timeout--) {
-        error = SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CAN_ctrl_reg.word);
-
-        if(!error) {
-            return -1;
-            //SPI failed
-        }
+        SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CAN_ctrl_reg.word);
 
         if(CAN_ctrl_reg.bF.OpMode == mode) {
-            break;
+            return 0;
         }
 
         sleep_us(100);
 
     }
 
-    if(!timeout) {
-        return -2;
-        //failed to set control mode in time
-    }
-
-    return 0;
+    return -1;
 
 }
 
-int8_t MCP2518fd_oscillator_config() {
+int8_t MCP2518fd_oscillator_check() {
     REG_OSC osc_ctrl_reg; 
     //check line 544 of can.h for more info on REG_OSC bitfield union
 
@@ -143,27 +122,17 @@ int8_t MCP2518fd_oscillator_config() {
     uint8_t error;
 
     while(timeout--) {
-        error = SPI_read_word_from_MCP(MCP2518FD_REG_OSC, &osc_ctrl_reg.word);
-
-        if(!error) {
-            return -1; 
-            //SPI communication has failed here since 0 bytes has been read
-        }
+        SPI_read_word_from_MCP(MCP2518FD_REG_OSC, &osc_ctrl_reg.word);
 
         if(osc_ctrl_reg.bF.OscReady) {
-            break;
+            return 0;
             //means that the oscillator is stable and ready to be modified
         }
 
         sleep_us(100);
     }
 
-    if(!timeout) {
-        return -2;
-        //oscillator failed to stabilize
-    }
-
-    return 0;
+    return -1;
 
     /*
     I will be using 40 Mhz internal crystal oscillator (no PLL)
@@ -171,60 +140,14 @@ int8_t MCP2518fd_oscillator_config() {
     */
 
 
-    //NEED TO ENTER CONFIG MODE HERE
-
-    osc_ctrl_reg.bF.PllEnable = 0;
-    osc_ctrl_reg.bF.OscDisable = 0;
-    osc_ctrl_reg.bF.LowPowerModeEnable = 0;
-    osc_ctrl_reg.bF.SCLKDIV = 0;
-    osc_ctrl_reg.bF.CLKODIV = 0;
-
-    //now write to system clock with new configuration and poll again
-
-    if(!SPI_write_word_to_MCP(MCP2518FD_REG_OSC, osc_ctrl_reg.word)) {
-        return -1;
-        //again, checks if spi communication failed
-    }
-
-    sleep_ms(5);
-
-    timeout = 10000;
-
-    while(timeout--) {
-        error = SPI_read_word_from_MCP(MCP2518FD_REG_OSC, &osc_ctrl_reg.word);
-
-        if(!error) {
-            return -1;
-            //spi failed
-        }
-
-        if(osc_ctrl_reg.bF.SclkReady) {
-            break;
-            //system clock stabilized
-        }
-
-        sleep_us(100);
-    }
-
-    if(!timeout) {
-        return -2;
-        //system clock failed to stabilize
-    }
-
-    return 0;
-
-    //from here we can continue with rest of MCP initialization (move onto FIFO configs)
-
 }
 
 int8_t MCP2518fd_devid_verify() {
     REG_DEVID devid_reg;
     
-    if(!SPI_read_word_from_MCP(MCP2518FD_REG_DEVID, &devid_reg.word)) {
-        return -2;
-    }
+    SPI_read_word_from_MCP(MCP2518FD_REG_DEVID, &devid_reg.word);
 
-    if(devid_reg.bF.DEV != 0x01) {
+    if(devid_reg.bF.DEV!= 0x01) {
         return -1;
     }
 
@@ -237,28 +160,17 @@ int8_t MCP2518fd_CAN_controller_config() {
 
     REG_CiCON CiCON_reg;
 
-    if(!SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CiCON_reg.word)) {
-        return -1;
+    SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CiCON_reg.word);
+
+    uint8_t timeout = 10000;
+
+    while(CiCON_reg.bF.isBusy && timeout--) {
+        sleep_us(100);
+        SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CiCON_reg.word);
     }
 
-    if(CiCON_reg.bF.isBusy == 1) {
-        uint8_t timeout = 10000;
-
-        while(timeout--) {
-            if(!SPI_read_word_from_MCP(MCP2518FD_REG_CiCON, &CiCON_reg.word)) {
-                return -1;
-            }
-
-            if(CiCON_reg.bF.isBusy == 0) {
-                break;
-            }
-
-            sleep_us(100);
-        }
-
-        if(!timeout) {
-            return -2;
-        }
+    if(!timeout) {
+        return -1;
     }
     
     /*
@@ -278,11 +190,7 @@ int8_t MCP2518fd_CAN_controller_config() {
     CiCON_reg.bF.TXQEnable = 1;
     CiCON_reg.bF.TxBandWidthSharing = 0x0;
 
-    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiCON, CiCON_reg.word)) {
-        return -1;
-        //again, checks if spi communication failed
-    }
-
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiCON, CiCON_reg.word);
     //do i need to poll again?
 
     return 0;
@@ -290,13 +198,13 @@ int8_t MCP2518fd_CAN_controller_config() {
     
 }
 
-int8_t MCP2518fd_nominal_bit_timing_config() {
+void MCP2518fd_nominal_bit_timing_config() {
     /*
     TQ (time quantum) = (BRP+1)/(SYSCLK)
 
     BRP is baud rate prescalar
 
-    TQ = 25 nanoseconds if we choose BRP = 0 
+    TQ = 25 nanoseconds if we choose BRP = 0
 
 
     every bit in CAN is transmitted/received like this:
@@ -337,15 +245,13 @@ int8_t MCP2518fd_nominal_bit_timing_config() {
 
     //0-based register so subtract one to desired number of TQ to assign
 
-    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiNBTCFG, NBT_reg.word)) {
-        return -1;
-    }
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiNBTCFG, NBT_reg.word);
 
-    return 0;
+
 
 }
 
-int8_t MCP2518fd_data_bit_timing_config() {
+void MCP2518fd_data_bit_timing_config() {
     REG_CiDBTCFG DBT_reg;
 
     //nearly the same principles as NBT, but faster for data transmission, and signal sampling point will be at around 75%
@@ -362,19 +268,15 @@ int8_t MCP2518fd_data_bit_timing_config() {
     */
 
     DBT_reg.bF.BRP = 0;
-    DBT_reg.bF.SJW = 4;
+    DBT_reg.bF.SJW = 3;
     DBT_reg.bF.TSEG1 = 13;
     DBT_reg.bF.TSEG2 = 4;
 
-    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiDBTCFG, DBT_reg.word)) {
-        return -1;
-    }
-
-    return 0;
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiDBTCFG, DBT_reg.word);
 
 }
 
-int8_t MCP2518fd_TDC_config() {
+void MCP2518fd_TDC_config() {
 
     REG_CiTDC TDC_reg;
 
@@ -383,64 +285,186 @@ int8_t MCP2518fd_TDC_config() {
     TDC_reg.bF.EdgeFilterEnable = 0; //enable this if there are noise and synchronization issues in startup
     TDC_reg.bF.SID11Enable = 0;
 
-    if(!SPI_write_word_to_MCP(MCP2518FD_REG_CiTDC, TDC_reg.word)) {
-        return -1;
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiTDC, TDC_reg.word);
+
+}
+
+void MCP2518fd_TXQ_FIFO_config() { //CiTXQCON
+    REG_CiTXQCON TXQ_reg;
+
+
+    TXQ_reg.txBF.TxNotFullIE = 0;
+    TXQ_reg.txBF.TxEmptyIE = 0;
+    TXQ_reg.txBF.TxAttemptIE = 0;
+
+    //for now not using any interrupts for TX queue
+
+    TXQ_reg.txBF.FRESET = 1; //reset all FIFOs
+    TXQ_reg.txBF.TxPriority = 31; //set as highest priority FIFO
+    TXQ_reg.txBF.TxAttempts = 0; //unlimited attempts for message transmission because we are treating the TX queue as highest priority, so messages are critical
+
+    TXQ_reg.txBF.FifoSize = 3; //4 messages per slot 
+    TXQ_reg.txBF.PayLoadSize = 0b000; //8 bytes 
+
+    //FifoSize defines the number of slots within the FIFO. each slot holds a singular CAN message.
+    
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiTXQCON, TXQ_reg.word);
+    
+   
+
+}
+
+void MCP2518fd_set_TXQ_UINC() { //UINC belongs in the CiTEFCON and CiTXQCONregister
+    REG_CiTXQCON TXQ_reg;
+
+    SPI_read_word_from_MCP(MCP2518FD_REG_CiTXQCON, &TXQ_reg.word);
+
+    TXQ_reg.txBF.UINC = 1;
+
+    SPI_write_word_to_MCP(MCP2518FD_REG_CiTXQCON, TXQ_reg.word);
+
+
+    //should i poll here?
+
+    //in terms of the design, UINC is meant to be incremented whenever i write a new message within the transmit buffer
+    //should i do this in tandem with the TXREQ bit?
+
+
+}
+
+void MCP2518fd_FIFO_config(uint8_t n, uint8_t m) { //CiFIFOCON
+
+    REG_CiFIFOCON TXFIFOCON_reg;
+
+    TXFIFOCON_reg.txBF.PayLoadSize = 0b000;
+    TXFIFOCON_reg.txBF.FifoSize = 9;
+
+    TXFIFOCON_reg.txBF.TxAttempts = 2;
+    TXFIFOCON_reg.txBF.TxPriority = 0; //lowest priority 
+    TXFIFOCON_reg.txBF.FRESET = 1; //reset this FIFO
+
+    TXFIFOCON_reg.txBF.TxEnable = 1; //set as Tx FIFO
+
+    TXFIFOCON_reg.txBF.RTREnable = 1;
+    TXFIFOCON_reg.txBF.TxAttemptIE = 1;
+    TXFIFOCON_reg.txBF.TxEmptyIE = 1;
+    TXFIFOCON_reg.txBF.TxHalfFullIE = 1;
+    TXFIFOCON_reg.txBF.TxNotFullIE = 1;
+
+    for(uint8_t i = 1; i <= n; i++) {
+        SPI_write_word_to_MCP(MCP2518FD_REG_CiFIFOCON+i*12, TXFIFOCON_reg.word);
     }
 
-    return 0;
 
-}
+    //check header files at lines 123-126 to ensure base address of FIFO and REG_STRIDE is correct
 
-int8_t MCP2518fd_FIFO_config() {
+    REG_CiFIFOCON RXFIFOCON_reg;
+
+    RXFIFOCON_reg.rxBF.PayLoadSize = 0b000;
+    RXFIFOCON_reg.rxBF.FifoSize = 9;
+    
+    RXFIFOCON_reg.rxBF.FRESET = 1;
+    RXFIFOCON_reg.rxBF.TxEnable = 0;
+    RXFIFOCON_reg.rxBF.RxTimeStampEnable = 0;
+    RXFIFOCON_reg.rxBF.RxOverFlowIE = 1;
+    RXFIFOCON_reg.rxBF.RxFullIE = 1;
+    RXFIFOCON_reg.rxBF.RxHalfFullIE = 1;
+    RXFIFOCON_reg.rxBF.RxNotEmptyIE = 1;
     
 
-    return 0;
-}
+    for(uint8_t j = 1; j <= m; j++) {
+        SPI_write_word_to_MCP(MCP2518FD_REG_CiFIFOCON+(n+j)*12, RXFIFOCON_reg.word);
+    }
 
-int8_t MCP2518fd_queue_FIFO_config() { //CiTXQCON
-
-}
-
-int8_t MCP2518fd_TX_FIFO_config(uint8_t n) { //CiFIFOCON
+    MCP2518fd_filter_and_mask_enable_config(n, m);    
 
 }
 
-int8_t MCP2518fd_RX_FIFO_config(uint8_t n) { //CiFIFOCON
+void MCP2518fd_filter_and_mask_enable_config(uint8_t n, uint8_t m) { //CiFLTCON
 
+    //setting catch-all filters only for RX FIFOs
+
+    REG_CiFLTCON filter_control_reg;
+    REG_CiFLTOBJ filter_reg;
+    REG_CiMASK mask_reg;
+
+    filter_reg.word = 0;
+    mask_reg.word = 0;
+    
+    for(int i = 0; i < m; i++) {
+
+        uint8_t fifo_num = n+1+i;
+
+        SPI_write_word_to_MCP(MCP2518FD_REG_CiFLTOBJ + i*MCP2518FD_FILTER_REG_STRIDE, filter_reg.word);
+        SPI_write_word_to_MCP(MCP2518FD_REG_CiMASK + i*MCP2518FD_FILTER_REG_STRIDE, mask_reg.word);
+
+        uint16_t filter_control_reg_addr = MCP2518FD_REG_CiFLTCON + (i/4)*4;
+
+        SPI_read_word_from_MCP(filter_control_reg_addr, &filter_control_reg.word);
+
+        switch(i%4) {
+            case 0:
+                filter_control_reg.bF.FLTEN0 = 1;
+                filter_control_reg.bF.F0BP = fifo_num;
+                break;
+
+            case 1:
+                filter_control_reg.bF.FLTEN1 = 1;
+                filter_control_reg.bF.F1BP = fifo_num;
+                break;
+
+            case 2:
+                filter_control_reg.bF.FLTEN2 = 1;
+                filter_control_reg.bF.F2BP = fifo_num;
+                break;
+
+            case 3:
+                filter_control_reg.bF.FLTEN3 = 1;
+                filter_control_reg.bF.F3BP = fifo_num;
+                break;
+        }
+
+        SPI_write_word_to_MCP(filter_control_reg_addr, filter_control_reg.word);
+    }
+
+
+  
 }
 
-int8_t MCP2518fd_filter_enable_config() { //CiFLTCON
 
-}
-
-//CiFLTOBJ
-//CiMASK
 //CiINT
 //IOCON
 //set to normal mode (poll)
 
 int8_t MCP2518fd_available_RAM_calc() {
+    //RAM used = (8 + PayLoadSize)*(FifoSize+1), 
+    //8 additional bytes from the header (ID word + Control word), 
+    //but is 12 with timestamps (disabled)
+    return 0;
 
 }
 
 int8_t MCP2518fd_init() {
+    SPI_to_CAN_master_init();
+
     spi_reset_MCP_chip(); //should set CAN controller mode to configuration mode already but further checks are made later
 
     sleep_ms(2);
 
-    if(MCP2518fd_set_mode(CAN_CONFIGURATION_MODE) != 0) { //check to see if already in configuration mode, if not then set it 
-        return -1;
+    REG_OSC osc;
+
+    uint32_t timeout = 1000;
+
+    while(--timeout) {
+        SPI_read_word_from_MCP(MCP2518FD_REG_OSC, &osc.word);
+        if(osc.bF.OscReady) {
+            break;
+        }
+        sleep_ms(1);
     }
 
-    if(!MCP2518fd_oscillator_config()) { //i need to double check if this logic is right, but checks if oscillator is running and then sets sysclk to 40 MHz
-        return -2;
-    } 
+   
 
-    if(!MCP2518fd_devid_verify()) { //checks device id to verify it is a MCP2518fd 
-        return -3;
-    }
-
-
-    
-    
+    //set to CAN FD normal at the end using the MCP2518fd_set_mode function
+    //is CiCON address right??
 }

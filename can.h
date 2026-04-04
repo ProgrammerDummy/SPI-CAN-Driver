@@ -26,7 +26,6 @@ NOTE: WHEN ACCESSING RAM (DATA) it must be 4 byte aligned (use padding here)
 
 */
 
-
 /*******************************************************************************
  * mcp2518fd_hw.h
  *
@@ -180,9 +179,9 @@ typedef union {
         uint32_t unimplemented1             : 1;  /* bit   7                                   */
         uint32_t WakeUpFilterEnable         : 1;  /* bit   8    - Bus wake-up filter           */
         uint32_t WakeUpFilterTime           : 2;  /* bits 10:9  - Wake-up filter time select   */
-        uint32_t unimplemented2             : 1;  /* bit  11                                   */
+        uint32_t isBusy                     : 1;  /* bit  11    - CAN module is busy flag      */
         uint32_t BitRateSwitchDisable       : 1;  /* bit  12    - Disable bit rate switch      */
-        uint32_t unimplemented3             : 3;  /* bits 15:13                                */
+        uint32_t unimplemented2             : 3;  /* bits 15:13                                */
         uint32_t RestrictReTxAttempts       : 1;  /* bit  16    - Restrict retransmit attempts */
         uint32_t EsiInGatewayMode           : 1;  /* bit  17    - ESI in gateway mode          */
         uint32_t SystemErrorToListenOnly    : 1;  /* bit  18    - Go to listen only on error   */
@@ -554,6 +553,71 @@ typedef union {
     uint8_t byte;
 } REG_CiFLTCON_BYTE;
 
+// ────────────────────────────────────────────────────────────────────────────
+// CiFLTCON - Filter Control Register (0x1D0, 0x1D4, ..., 0x1EC)
+// ────────────────────────────────────────────────────────────────────────────
+typedef union _REG_CiFLTCON {
+    struct {
+        // Filter 0 (bits 7:0)
+        uint32_t F0BP               : 5;  // bits 4:0   - Filter 0 Buffer Pointer
+        uint32_t unimplemented1     : 2;  // bits 6:5   - Unimplemented
+        uint32_t FLTEN0             : 1;  // bit 7      - Filter 0 Enable
+        
+        // Filter 1 (bits 15:8)
+        uint32_t F1BP               : 5;  // bits 12:8  - Filter 1 Buffer Pointer
+        uint32_t unimplemented2     : 2;  // bits 14:13 - Unimplemented
+        uint32_t FLTEN1             : 1;  // bit 15     - Filter 1 Enable
+        
+        // Filter 2 (bits 23:16)
+        uint32_t F2BP               : 5;  // bits 20:16 - Filter 2 Buffer Pointer
+        uint32_t unimplemented3     : 2;  // bits 22:21 - Unimplemented
+        uint32_t FLTEN2             : 1;  // bit 23     - Filter 2 Enable
+        
+        // Filter 3 (bits 31:24)
+        uint32_t F3BP               : 5;  // bits 28:24 - Filter 3 Buffer Pointer
+        uint32_t unimplemented4     : 2;  // bits 30:29 - Unimplemented
+        uint32_t FLTEN3             : 1;  // bit 31     - Filter 3 Enable
+    } bF;
+    
+    uint32_t word;
+    uint8_t byte[4];
+    
+} REG_CiFLTCON;
+
+// ────────────────────────────────────────────────────────────────────────────
+// CiFLTOBJ - Filter Object Register (0x1F0, 0x1F8, ..., 0x2E8)
+// ────────────────────────────────────────────────────────────────────────────
+typedef union _REG_CiFLTOBJ {
+    struct {
+        uint32_t SID                : 11; // bits 10:0  - Standard Identifier
+        uint32_t EID                : 18; // bits 28:11 - Extended Identifier
+        uint32_t SID11              : 1;  // bit 29     - 12th bit of SID (CAN FD extension)
+        uint32_t EXIDE              : 1;  // bit 30     - Extended ID Enable (1=match extended frames)
+        uint32_t unimplemented1     : 1;  // bit 31     - Unimplemented
+    } bF;
+    
+    uint32_t word;
+    uint8_t byte[4];
+    
+} REG_CiFLTOBJ;
+
+// ────────────────────────────────────────────────────────────────────────────
+// CiMASK - Mask Register (0x1F4, 0x1FC, ..., 0x2EC)
+// ────────────────────────────────────────────────────────────────────────────
+typedef union _REG_CiMASK {
+    struct {
+        uint32_t MSID               : 11; // bits 10:0  - Standard Identifier Mask
+        uint32_t MEID               : 18; // bits 28:11 - Extended Identifier Mask
+        uint32_t MSID11             : 1;  // bit 29     - Mask bit for SID11
+        uint32_t MIDE               : 1;  // bit 30     - Mask IDE bit (1=filter by frame type)
+        uint32_t unimplemented1     : 1;  // bit 31     - Unimplemented
+    } bF;
+    
+    uint32_t word;
+    uint8_t byte[4];
+    
+} REG_CiMASK;
+
 /*--- Oscillator Register (OSC) at 0xE00 -----------------------------------*/
 typedef union {
     struct {
@@ -764,10 +828,30 @@ const uint16_t crc16_table[256] = {
     0x8213, 0x0216, 0x021C, 0x8219, 0x0208, 0x820D, 0x8207, 0x0202
 };
 
+void SPI_to_CAN_master_init(void);
+void spi_write_to_MCP(uint8_t *txbuffer, uint8_t *rxbuffer, uint16_t len);
+void SPI_read_word_from_MCP(uint16_t addr, uint32_t *data);
+void SPI_write_word_to_MCP(uint16_t addr, uint32_t data);
+void spi_reset_MCP_chip(void);
+void MCP2518fd_nominal_bit_timing_config(void);
+void MCP2518fd_data_bit_timing_config(void);
+void MCP2518fd_TDC_config(void);
+void MCP2518fd_TXQ_FIFO_config(void);
+void MCP2518fd_set_TXQ_UINC(void);
+void MCP2518fd_FIFO_config(uint8_t n, uint8_t m);
+void MCP2518fd_filter_and_mask_enable_config(uint8_t n, uint8_t m);
 
+int8_t MCP2518fd_oscillator_check(void);
+int8_t MCP2518fd_devid_verify(void);     
+int8_t MCP2518fd_set_mode(CAN_OPERATION_MODE mode); 
+int8_t MCP2518fd_CAN_controller_config(void);        
+int8_t MCP2518fd_init(void);       
+int8_t MCP2518fd_available_RAM_calc(void);                
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* MCP2518FD_HW_H */
+
+
